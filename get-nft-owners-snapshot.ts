@@ -1,8 +1,8 @@
 #!/usr/bin/env tsx
 
 import * as fs from 'fs';
-import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { fileURLToPath } from 'url';
 
 import { Address } from '@ton/ton';
 
