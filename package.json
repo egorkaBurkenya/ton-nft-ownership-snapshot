@@ -1,7 +1,7 @@
 {
     "name": "ton-nft-ownership-snapshot",
-    "version": "1.0.0",
-    "description": "Generate historical NFT ownership snapshots for TON blockchain collections at any point in time",
+    "version": "2.0.0",
+    "description": "Generate historical NFT ownership snapshots for TON blockchain collections with automatic sale contract resolution",
     "main": "index.js",
     "type": "module",
     "scripts": {
@@ -24,18 +24,22 @@
         "ton-blockchain",
         "nft-analysis",
         "ownership-tracking",
-        "blockchain-analytics"
+        "blockchain-analytics",
+        "sale-contract-resolution",
+        "getgems",
+        "marketplace",
+        "real-owners"
     ],
     "author": "TON NFT Tools",
     "license": "MIT",
     "repository": {
         "type": "git",
-        "url": "https://github.com/yourusername/ton-nft-ownership-snapshot.git"
+        "url": "https://github.com/egorkaBurkenya/ton-nft-ownership-snapshot.git"
     },
     "bugs": {
-        "url": "https://github.com/yourusername/ton-nft-ownership-snapshot/issues"
+        "url": "https://github.com/egorkaBurkenya/ton-nft-ownership-snapshot/issues"
     },
-    "homepage": "https://github.com/yourusername/ton-nft-ownership-snapshot#readme",
+    "homepage": "https://github.com/egorkaBurkenya/ton-nft-ownership-snapshot#readme",
     "dependencies": {
         "@ton/ton": "^15.2.1",
         "tsx": "^4.0.0"

@@ -69,12 +69,206 @@ interface OwnershipSnapshot {
   sortedBalances: Array<[string, number]>;
 }
 
+interface TonApiAccountInfo {
+  address: string;
+  balance: number;
+  last_activity: number;
+  status: string;
+  interfaces: string[];
+  get_methods: string[];
+  is_wallet: boolean;
+}
+
+interface GetGemsSaleData {
+  magic: number;
+  is_complete: boolean;
+  created_at: number;
+  marketplace: string;
+  nft: string;
+  owner: string;
+  full_price: string;
+  market_fee_address: string;
+  market_fee: number;
+  royalty_address: string;
+  royalty_amount: number;
+}
+
+interface TonApiGetMethodResponse {
+  success: boolean;
+  exit_code: number;
+  stack: any[];
+  decoded?: GetGemsSaleData;
+}
+
+class OwnerResolver {
+  private readonly baseUrl = 'https://tonapi.io/v2';
+  private readonly requestDelay = 800;
+  private cache = new Map<string, string>(); // Cache resolved owners
+
+  constructor() {}
+
+  private async sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async makeRequest<T>(
+    url: string,
+    params: Record<string, any> = {},
+  ): Promise<T> {
+    const urlObj = new URL(url);
+    Object.keys(params).forEach((key) => {
+      if (params[key] !== undefined && params[key] !== null) {
+        urlObj.searchParams.append(key, params[key].toString());
+      }
+    });
+
+    console.log(`🔄 Making API request: ${urlObj.pathname}`);
+
+    const response = await fetch(urlObj.toString(), {
+      headers: {
+        accept: 'application/json',
+      },
+    });
+
+    if (response.status === 429) {
+      console.log('⏳ Rate limit hit, waiting 60 seconds...');
+      // Show countdown
+      for (let i = 60; i > 0; i--) {
+        process.stdout.write(`\r⏳ Waiting ${i} seconds for rate limit...`);
+        await this.sleep(1000);
+      }
+      console.log('\n✅ Resuming requests...');
+      return this.makeRequest<T>(url, params);
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `API request failed: ${response.status} ${response.statusText}. Response: ${errorText}`,
+      );
+    }
+
+    const data = await response.json();
+
+    // Check for TonAPI error format
+    if (data.error) {
+      throw new Error(`TonAPI error: ${data.error}`);
+    }
+
+    // Add delay between requests to respect rate limits
+    console.log(`⏱️  Waiting ${this.requestDelay}ms before next request...`);
+    await this.sleep(this.requestDelay);
+
+    return data;
+  }
+
+  /**
+   * Get account information from TonAPI
+   */
+  async getAccountInfo(address: string): Promise<TonApiAccountInfo> {
+    return this.makeRequest<TonApiAccountInfo>(
+      `${this.baseUrl}/accounts/${address}`,
+    );
+  }
+
+  /**
+   * Get sale data from GetGems v3 contract
+   */
+  async getGetGemsSaleData(
+    contractAddress: string,
+  ): Promise<GetGemsSaleData | null> {
+    try {
+      const response = await this.makeRequest<TonApiGetMethodResponse>(
+        `${this.baseUrl}/blockchain/accounts/${contractAddress}/methods/get_sale_data`,
+      );
+
+      if (response.success && response.decoded) {
+        return response.decoded;
+      }
+      return null;
+    } catch (error) {
+      console.warn(
+        `Failed to get sale data for ${contractAddress}: ${error.message}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Resolve the real owner of an address
+   * If the address is a wallet, return it as is
+   * If it's a sale contract, try to find the real owner
+   */
+  async resolveOwner(address: string): Promise<string> {
+    // Check cache first
+    if (this.cache.has(address)) {
+      return this.cache.get(address)!;
+    }
+
+    try {
+      // Get account information
+      const accountInfo = await this.getAccountInfo(address);
+
+      // If it's already a wallet, return as is
+      if (accountInfo.is_wallet) {
+        console.log(`✅ ${address.slice(-8)}... is a wallet`);
+        this.cache.set(address, address);
+        return address;
+      }
+
+      console.log(
+        `🔍 Analyzing contract ${address.slice(-8)}... with interfaces: [${accountInfo.interfaces.join(', ')}]`,
+      );
+
+      // Check if it's a GetGems v3 sale contract
+      if (accountInfo.interfaces.includes('nft_sale_getgems_v3')) {
+        const saleData = await this.getGetGemsSaleData(address);
+        if (saleData && saleData.owner) {
+          const realOwner = saleData.owner;
+          console.log(
+            `🎯 Found real owner of sale contract ${address.slice(-8)}...: ${realOwner.slice(-8)}...`,
+          );
+
+          // Recursively resolve in case the owner is also a contract
+          const resolvedOwner = await this.resolveOwner(realOwner);
+          this.cache.set(address, resolvedOwner);
+          return resolvedOwner;
+        }
+      }
+
+      // For other contract types, we currently can't determine the owner
+      // Return the contract address itself and log a warning
+      console.log(
+        `⚠️  Could not resolve owner for contract ${address.slice(-8)}... (interfaces: [${accountInfo.interfaces.join(', ')}]), using contract address`,
+      );
+      this.cache.set(address, address);
+      return address;
+    } catch (error) {
+      console.warn(`Failed to resolve owner for ${address}: ${error.message}`);
+      this.cache.set(address, address);
+      return address;
+    }
+  }
+
+  /**
+   * Get cache statistics for debugging
+   */
+  getCacheStats() {
+    return {
+      size: this.cache.size,
+      entries: Array.from(this.cache.entries()).slice(0, 5), // Show first 5 entries for debugging
+    };
+  }
+}
+
 class NFTOwnershipTracker {
   private readonly baseUrl = 'https://tonapi.io/v2';
   private readonly requestDelay = 800; // 0.8 seconds to respect TonAPI rate limits but speed up processing
+  private readonly ownerResolver: OwnerResolver;
 
   constructor() {
     // TonAPI doesn't require API key for basic usage
+    this.ownerResolver = new OwnerResolver();
   }
 
   /**
@@ -546,6 +740,75 @@ class NFTOwnershipTracker {
   }
 
   /**
+   * Resolve real owners for sale contracts and re-aggregate balances
+   */
+  async resolveOwnersAndReaggregate(
+    balances: Record<string, number>,
+  ): Promise<Record<string, number>> {
+    console.log('\n🔍 Step 5/6: Resolving real owners for sale contracts...');
+
+    const resolvedBalances: Record<string, number> = {};
+    const ownersToResolve = Object.keys(balances);
+
+    console.log(
+      `📊 Found ${ownersToResolve.length} unique owners, checking for sale contracts...`,
+    );
+
+    let resolvedCount = 0;
+    let contractsFound = 0;
+    let contractsResolved = 0;
+    const progressStep = Math.max(1, Math.floor(ownersToResolve.length / 10));
+
+    for (const owner of ownersToResolve) {
+      try {
+        const resolvedOwner = await this.ownerResolver.resolveOwner(owner);
+        const nftCount = balances[owner];
+
+        if (resolvedOwner !== owner) {
+          contractsFound++;
+          contractsResolved++;
+          console.log(
+            `🔄 Resolved ${owner.slice(-8)}... -> ${resolvedOwner.slice(-8)}... (${nftCount} NFTs)`,
+          );
+        }
+
+        // Add to resolved balances
+        resolvedBalances[resolvedOwner] =
+          (resolvedBalances[resolvedOwner] || 0) + nftCount;
+      } catch (error) {
+        console.warn(`Failed to resolve owner ${owner}: ${error.message}`);
+        // Keep original owner in case of error
+        resolvedBalances[owner] = balances[owner];
+      }
+
+      resolvedCount++;
+      if (
+        resolvedCount % progressStep === 0 ||
+        resolvedCount === ownersToResolve.length
+      ) {
+        const percentage = Math.round(
+          (resolvedCount / ownersToResolve.length) * 100,
+        );
+        console.log(
+          `📈 Progress: ${resolvedCount}/${ownersToResolve.length} owners processed (${percentage}%)`,
+        );
+      }
+    }
+
+    const cacheStats = this.ownerResolver.getCacheStats();
+    console.log(`\n📋 Resolution Summary:`);
+    console.log(`   Total owners: ${ownersToResolve.length}`);
+    console.log(`   Sale contracts found: ${contractsFound}`);
+    console.log(`   Successfully resolved: ${contractsResolved}`);
+    console.log(
+      `   Final unique owners: ${Object.keys(resolvedBalances).length}`,
+    );
+    console.log(`   Cache size: ${cacheStats.size}`);
+
+    return resolvedBalances;
+  }
+
+  /**
    * Get NFT owners snapshot for a specific date
    */
   async getOwnersSnapshot(
@@ -583,13 +846,16 @@ class NFTOwnershipTracker {
     );
 
     // Step 4: Aggregate balances
-    console.log('Step 4/5: Aggregating balances by owner...');
+    console.log('Step 4/6: Aggregating balances by owner...');
     const balances = this.aggregateBalances(ownershipMap);
     console.log(`Found ${Object.keys(balances).length} unique owners`);
 
-    // Step 5: Sort by balance descending
-    console.log('Step 5/5: Sorting owners by balance...');
-    const sortedBalances = Object.entries(balances).sort(
+    // Step 5: Resolve real owners for sale contracts
+    const resolvedBalances = await this.resolveOwnersAndReaggregate(balances);
+
+    // Step 6: Sort by balance descending
+    console.log('Step 6/6: Sorting owners by balance...');
+    const sortedBalances = Object.entries(resolvedBalances).sort(
       ([, a], [, b]) => b - a,
     );
 
@@ -598,8 +864,8 @@ class NFTOwnershipTracker {
       targetDate,
       collectionAddress: contractAddress,
       totalNfts: Object.keys(ownershipMap).length,
-      ownersCount: Object.keys(balances).length,
-      balances,
+      ownersCount: Object.keys(resolvedBalances).length,
+      balances: resolvedBalances,
       sortedBalances,
     };
 
@@ -713,4 +979,9 @@ if (process.argv[1] === __filename) {
   main().catch(console.error);
 }
 
-export { NFTOwnershipTracker, type OwnershipSnapshot, type TonApiNFTItem };
+export {
+  NFTOwnershipTracker,
+  OwnerResolver,
+  type OwnershipSnapshot,
+  type TonApiNFTItem,
+};

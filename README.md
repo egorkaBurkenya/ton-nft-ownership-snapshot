@@ -9,11 +9,14 @@
 ## 🚀 Features
 
 - ✅ **Historical Accuracy** - Reconstruct exact NFT ownership at any past date
+- ✅ **Sale Contract Resolution** - Automatically resolves real owners behind sale contracts
 - ✅ **Comprehensive Analysis** - Checks collection events + individual NFT history  
+- ✅ **GetGems v3 Support** - Full support for GetGems marketplace sale contracts
 - ✅ **Rate Limit Handling** - Built-in TonAPI rate limiting with smart retry logic
 - ✅ **No API Key Required** - Uses free TonAPI endpoints
 - ✅ **Address Format Support** - Accepts both raw (`0:...`) and user-friendly (`EQ...`) formats
 - ✅ **Detailed Progress Tracking** - Real-time progress with ETA estimates
+- ✅ **Smart Caching** - Efficient caching for owner resolution to minimize API calls
 - ✅ **JSON Output** - Saves results in structured format for further analysis
 
 ## 🔍 Problem Statement
@@ -26,12 +29,15 @@ When analyzing NFT collections on TON blockchain, you often need to know **who o
 - 🔄 **Governance Voting** - Determine voting rights based on past holdings
 - 💰 **Reward Distribution** - Distribute tokens to historical holders
 
-However, blockchain APIs typically only show **current ownership**, not historical states. This tool solves that problem by:
+However, blockchain APIs typically only show **current ownership**, not historical states. Additionally, many NFTs are held by **sale contracts** (marketplaces) rather than their real owners, making ownership analysis even more complex.
+
+This tool solves both problems by:
 
 1. **Fetching current ownership** from TonAPI
 2. **Retrieving all transfer events** after your target date
 3. **Reversing those transfers** to reconstruct past ownership
 4. **Cross-checking individual NFT histories** for complete accuracy
+5. **🆕 Resolving real owners** behind sale contracts automatically
 
 ## 📦 Installation
 
@@ -44,7 +50,7 @@ However, blockchain APIs typically only show **current ownership**, not historic
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/ton-nft-ownership-snapshot.git
+git clone https://github.com/egorkaBurkenya/ton-nft-ownership-snapshot.git
 cd ton-nft-ownership-snapshot
 
 # Install dependencies
@@ -80,7 +86,22 @@ npx tsx get-nft-owners-snapshot.ts 0:e7798aab4a15a8f804cae771f211d9b5357a8c7cfca
 
 # Get snapshot for a date in 2025
 npx tsx get-nft-owners-snapshot.ts EQB3s8aBeSg6mhhM8N9B2h1-4W2_1M5w4CUpYI3qD6d6F6xO 2025-03-21
+
+# Note: The tool will automatically resolve sale contracts to real owners
+# Example output: "🔄 Resolved 6ac6d3cd... -> 3058413e... (5 NFTs)"
 ```
+
+### 🎯 What's New: Sale Contract Resolution
+
+This tool now automatically detects and resolves **sale contracts** to their real owners, providing accurate ownership data even when NFTs are listed on marketplaces:
+
+- **Before**: NFT shows as owned by sale contract `0:abc123...`
+- **After**: NFT correctly shows as owned by real owner `0:def456...`
+
+This is especially important for:
+- **GetGems marketplace** - Automatically resolves GetGems v3 sale contracts
+- **Accurate airdrops** - Rewards go to real owners, not marketplace contracts
+- **Proper analytics** - See true ownership distribution, not marketplace holdings
 
 ## 📊 Output Format
 
@@ -124,17 +145,45 @@ The tool generates a JSON file with the following structure:
 2. **📚 Get Collection Events** - Retrieve all transfer events from target date onwards  
 3. **🔄 Reverse Transfers** - Apply transfers in reverse to reconstruct historical ownership
 4. **🔍 Individual NFT Check** - Verify missed transfers by checking each NFT's history
-5. **📊 Aggregate Results** - Count NFTs per owner and sort by holdings
+5. **🎯 Resolve Real Owners** - Automatically detect and resolve sale contracts to real owners
+6. **📊 Aggregate Results** - Count NFTs per owner and sort by holdings
 
 ### Why This Approach Works
 
 The key insight is that **current ownership + future transfers = past ownership**. By reversing all transfers that happened after your target date, we can accurately reconstruct who owned what at that specific moment.
 
+### Sale Contract Resolution
+
+A major challenge in NFT ownership analysis is that many NFTs are held by **sale contracts** (marketplaces) rather than their actual owners. This tool automatically resolves this issue:
+
+#### Supported Sale Contract Types
+
+- ✅ **GetGems v3** (`nft_sale_getgems_v3`) - Full automatic resolution
+- ⚠️ **Custom Contracts** - Detected but kept as-is with warnings
+
+#### Resolution Process
+
+1. **Contract Detection** - Identifies non-wallet addresses using `is_wallet` flag
+2. **Interface Analysis** - Checks contract interfaces to determine type
+3. **Owner Extraction** - For GetGems v3: calls `get_sale_data()` to get real owner
+4. **Recursive Resolution** - Handles cases where owner is also a contract
+5. **Smart Caching** - Caches results to minimize API calls
+
+#### Example Resolution
+
+```
+🔍 Analyzing contract 6ac6d3cd... with interfaces: [nft_sale_getgems_v3]
+🎯 Found real owner of sale contract 6ac6d3cd...: 3058413e...
+✅ 3058413e... is a wallet
+🔄 Resolved 6ac6d3cd... -> 3058413e... (5 NFTs)
+```
+
 ### Accuracy Guarantees
 
 - **Collection-level events** catch most transfers efficiently
 - **Individual NFT histories** ensure 100% accuracy for edge cases  
-- **Comprehensive validation** against both data sources
+- **Sale contract resolution** provides real ownership data
+- **Comprehensive validation** against multiple data sources
 - **Transfer chronology** properly handles multiple transfers per NFT
 
 ## ⚡ Performance & Rate Limits
@@ -174,6 +223,17 @@ The tool provides real-time progress updates:
 🔍 Checking individual NFT history for 1157 NFTs...
 ⏱️  Estimated time: ~25 minutes with rate limiting
 📈 Checked individual NFT history: 58/1157 (5%)
+
+🔍 Step 5/6: Resolving real owners for sale contracts...
+📊 Found 245 unique owners, checking for sale contracts...
+🔄 Resolved 6ac6d3cd... -> 3058413e... (5 NFTs)
+📈 Progress: 123/245 owners processed (50%)
+
+📋 Resolution Summary:
+   Total owners: 245
+   Sale contracts found: 12
+   Successfully resolved: 12
+   Final unique owners: 233
 ```
 
 ## 🛠️ Technical Details
@@ -189,6 +249,8 @@ The tool provides real-time progress updates:
 - `GET /v2/nfts/collections/{address}/items` - Collection NFTs
 - `GET /v2/accounts/{address}/events` - Collection transfer events
 - `GET /v2/nfts/{address}/history` - Individual NFT history
+- `GET /v2/accounts/{address}` - Account information and contract interfaces
+- `GET /v2/blockchain/accounts/{address}/methods/get_sale_data` - GetGems sale data
 
 ### Error Handling
 
@@ -206,6 +268,8 @@ The tool provides real-time progress updates:
 3. **`TARGET_DATE must be in YYYY-MM-DD format`** - Use correct date format  
 4. **`TARGET_DATE cannot be in the future`** - Choose a past date
 5. **`TonAPI error: entity not found`** - Collection address not found
+6. **`Could not resolve owner for contract`** - Unknown contract type (kept as-is)
+7. **`Failed to get sale data`** - Sale contract method call failed (gracefully handled)
 
 ### Performance Tips
 
@@ -228,7 +292,7 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 ### Development Setup
 
 ```bash
-git clone https://github.com/yourusername/ton-nft-ownership-snapshot.git
+git clone https://github.com/egorkaBurkenya/ton-nft-ownership-snapshot.git
 cd ton-nft-ownership-snapshot
 npm install
 npm run dev
@@ -253,8 +317,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/ton-nft-ownership-snapshot/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/ton-nft-ownership-snapshot/discussions)
+- **Issues**: [GitHub Issues](https://github.com/egorkaBurkenya/ton-nft-ownership-snapshot/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/egorkaBurkenya/ton-nft-ownership-snapshot/discussions)
 
 ---
 
