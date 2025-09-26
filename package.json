@@ -1,0 +1,55 @@
+{
+  "name": "ton-nft-ownership-snapshot",
+  "version": "1.0.0",
+  "description": "Generate historical NFT ownership snapshots for TON blockchain collections at any point in time",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "tsx get-nft-owners-snapshot.ts",
+    "build": "tsc",
+    "dev": "tsx watch get-nft-owners-snapshot.ts",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write ."
+  },
+  "keywords": [
+    "ton",
+    "blockchain",
+    "nft",
+    "ownership",
+    "snapshot",
+    "historical",
+    "tonapi",
+    "crypto",
+    "web3",
+    "ton-blockchain",
+    "nft-analysis",
+    "ownership-tracking",
+    "blockchain-analytics"
+  ],
+  "author": "TON NFT Tools",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/ton-nft-ownership-snapshot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/ton-nft-ownership-snapshot/issues"
+  },
+  "homepage": "https://github.com/yourusername/ton-nft-ownership-snapshot#readme",
+  "dependencies": {
+    "@ton/ton": "^15.2.1",
+    "tsx": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "eslint": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "prettier": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  }
+}
